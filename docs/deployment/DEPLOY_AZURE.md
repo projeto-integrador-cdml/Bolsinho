@@ -63,14 +63,14 @@ https://bolsinho.azurewebsites.net
 
 1. **Criar resource group:**
    ```bash
-   az group create --name bolsinho-rg --location eastus
+   az group create --name bolsinho-rg --location brazilsouth
    ```
 
    Ou via Portal Azure:
    - Acesse https://portal.azure.com
    - Vá em "Resource groups" → "Create"
    - Nome: `bolsinho-rg`
-   - Region: `East US` (ou mais próxima de você)
+   - Region: `Brazil South`
 
 ### Passo 3: Criar Azure Database for MySQL
 
@@ -79,7 +79,7 @@ https://bolsinho.azurewebsites.net
    az mysql flexible-server create \
      --resource-group bolsinho-rg \
      --name bolsinho-mysql \
-     --location eastus \
+     --location brazilsouth \
      --admin-user finbot \
      --admin-password "hermes123" \
      --sku-name Standard_B1ms \
@@ -96,7 +96,7 @@ https://bolsinho.azurewebsites.net
      - Admin username: `finbot`
      - Password: `hermes123`
      - Compute + storage: `Burstable B1ms` (adequado para estudantes)
-     - Location: `East US`
+     - Location: `Brazil South`
 
 2. **Criar banco de dados:**
    ```bash
@@ -158,7 +158,7 @@ az acr create \
 az appservice plan create \
   --name bolsinho-plan \
   --resource-group bolsinho-rg \
-  --location eastus \
+  --location brazilsouth \
   --is-linux \
   --sku B1
 ```
@@ -168,7 +168,7 @@ az appservice plan create \
 - Configure:
   - Name: `bolsinho-plan`
   - OS: `Linux`
-  - Region: `East US` (ou `Brazil South` se preferir)
+  - Region: `Brazil South`
   - Pricing tier: `Basic B1` (usar créditos de estudante)
   - **Nota:** Com créditos de estudante, você pode usar até 750 horas/mês no tier Basic
 
@@ -223,10 +223,10 @@ Se não quiser usar Container Registry, pode fazer deploy direto do GitHub:
      --resource-group bolsinho-rg \
      --name bolsinho-app-UNIQUE_ID \
      --settings \
-       DATABASE_URL="mysql://finbot:SUA_SENHA@bolsinho-mysql.mysql.database.azure.com:3306/finbot" \
+       DATABASE_URL="mysql://finbot:hermes123@bolsinho-mysql.mysql.database.azure.com:3306/finbot" \
        GROQ_API_KEY="sua_chave_groq" \
        NEWS_API_KEY="sua_chave_newsapi" \
-       JWT_SECRET="sua_chave_secreta_aleatoria" \
+       JWT_SECRET="hermes123" \
        NODE_ENV="production" \
        PORT="8080" \
        WEBSITES_PORT="8080" \
@@ -243,7 +243,7 @@ Se não quiser usar Container Registry, pode fazer deploy direto do GitHub:
      --resource-group bolsinho-rg \
      --name bolsinho-app \
      --connection-string-type MySQL \
-     --settings DefaultConnection="mysql://finbot:SUA_SENHA@bolsinho-mysql.mysql.database.azure.com:3306/finbot"
+     --settings DefaultConnection="mysql://finbot:hermes123@bolsinho-mysql.mysql.database.azure.com:3306/finbot"
    ```
 
 **OU** via Portal Azure:
@@ -254,7 +254,7 @@ Se não quiser usar Container Registry, pode fazer deploy direto do GitHub:
      - Name: `bolsinho-app` (deve ser único globalmente)
      - Publish: `Docker Container`
      - OS: `Linux`
-     - Region: `East US`
+     - Region: `Brazil South`
      - App Service Plan: `bolsinho-plan`
 
 2. **Configurar Container:**
@@ -266,10 +266,10 @@ Se não quiser usar Container Registry, pode fazer deploy direto do GitHub:
 3. **Configurar variáveis de ambiente:**
    - Vá em "Configuration" → "Application settings"
    - Adicione:
-     - `DATABASE_URL`: `mysql://finbot:SUA_SENHA@bolsinho-mysql.mysql.database.azure.com:3306/finbot`
+     - `DATABASE_URL`: `mysql://finbot:hermes123@bolsinho-mysql.mysql.database.azure.com:3306/finbot`
      - `GROQ_API_KEY`: `sua_chave_groq`
      - `NEWS_API_KEY`: `sua_chave_newsapi`
-     - `JWT_SECRET`: `sua_chave_secreta`
+     - `JWT_SECRET`: `hermes123`
      - `NODE_ENV`: `production`
      - `PORT`: `8080`
      - `WEBSITES_PORT`: `8080`
@@ -427,10 +427,10 @@ Para deploy automático quando você fizer push no GitHub:
 
    Adicione:
    ```env
-   DATABASE_URL=mysql://finbot:senha@bolsinho-mysql.mysql.database.azure.com:3306/finbot
+   DATABASE_URL=mysql://finbot:hermes123@bolsinho-mysql.mysql.database.azure.com:3306/finbot
    GROQ_API_KEY=sua_chave_groq
    NEWS_API_KEY=sua_chave_newsapi
-   JWT_SECRET=sua_chave_secreta
+   JWT_SECRET=hermes123
    NODE_ENV=production
    PORT=3000
    ```
@@ -486,7 +486,7 @@ Para maior segurança, armazene secrets no Key Vault:
    az keyvault create \
      --name bolsinho-kv \
      --resource-group bolsinho-rg \
-     --location eastus
+     --location brazilsouth
    ```
 
 2. **Adicionar secrets:**
@@ -526,7 +526,7 @@ az webapp log download --resource-group bolsinho-rg --name bolsinho-app --log-fi
    ```bash
    az monitor app-insights component create \
      --app bolsinho-insights \
-     --location eastus \
+     --location brazilsouth \
      --resource-group bolsinho-rg
    ```
 

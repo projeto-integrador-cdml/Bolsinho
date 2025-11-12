@@ -20,8 +20,8 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 export type SessionPayload = {
   openId: string;
-  appId: string;
-  name: string;
+  appId?: string; // Optional for email/password auth
+  name?: string; // Optional
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -154,22 +154,25 @@ class SDKServer {
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
+    if (!secret || secret === "change-this-secret-in-production") {
+      console.warn("[Auth] JWT_SECRET not set or using default value. Set JWT_SECRET in .env for production!");
+    }
     return new TextEncoder().encode(secret);
   }
 
   /**
-   * Create a session token for a Manus user openId
+   * Create a session token for a user
    * @example
-   * const sessionToken = await sdk.createSessionToken(userInfo.openId);
+   * const sessionToken = await sdk.createSessionToken(userInfo.openId, { name: "User Name" });
    */
   async createSessionToken(
     openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
+    options: { expiresInMs?: number; name?: string; appId?: string } = {}
   ): Promise<string> {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
+        appId: options.appId || ENV.appId || "bolsinho",
         name: options.name || "",
       },
       options
@@ -185,10 +188,14 @@ class SDKServer {
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
+    // Use default appId if not provided
+    const appId = payload.appId || ENV.appId || "bolsinho";
+    const name = payload.name || "";
+
     return new SignJWT({
       openId: payload.openId,
-      appId: payload.appId,
-      name: payload.name,
+      appId,
+      name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
@@ -199,33 +206,38 @@ class SDKServer {
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
     if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
       return null;
     }
 
     try {
       const secretKey = this.getSessionSecret();
+      
+      // If secret is default, warn in production
+      if (ENV.cookieSecret === "change-this-secret-in-production" && ENV.isProduction) {
+        console.warn("[Auth] Using default JWT_SECRET in production! This is insecure!");
+      }
+      
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (
-        !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
-        !isNonEmptyString(name)
-      ) {
-        console.warn("[Auth] Session payload missing required fields");
+      // openId is required
+      if (!isNonEmptyString(openId)) {
         return null;
       }
 
+      // Use defaults for optional fields
+      const sessionAppId = isNonEmptyString(appId) ? appId : (ENV.appId || "bolsinho");
+      const sessionName = isNonEmptyString(name) ? name : "";
+
       return {
         openId,
-        appId,
-        name,
+        appId: sessionAppId,
+        name: sessionName,
       };
     } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+      // Silently fail - user is not authenticated
       return null;
     }
   }
@@ -255,7 +267,7 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<User | null> {
-    // Sistema simplificado sem OAuth - autenticação é opcional
+    // Sistema simplificado - suporta OAuth e email/password
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
     
@@ -273,7 +285,20 @@ class SDKServer {
 
       const sessionUserId = session.openId;
       const signedInAt = new Date();
+      
+      // Try to get user by openId first
       let user = await db.getUserByOpenId(sessionUserId);
+      
+      // If not found and openId looks like an email, try by email
+      if (!user && sessionUserId.includes("@")) {
+        user = await db.getUserByEmail(sessionUserId);
+      }
+      
+      // If still not found and openId starts with "email_", try extracting email
+      if (!user && sessionUserId.startsWith("email_")) {
+        const email = sessionUserId.replace("email_", "");
+        user = await db.getUserByEmail(email);
+      }
 
       if (!user) {
         // Usuário não existe no banco - retorna null
@@ -282,13 +307,14 @@ class SDKServer {
 
       // Atualiza última vez que assinou
       await db.upsertUser({
-        openId: user.openId,
+        openId: user.openId || sessionUserId,
         lastSignedIn: signedInAt,
       });
 
       return user;
     } catch (error) {
       // Em caso de erro, retorna null (não autenticado)
+      console.warn("[Auth] Authentication error:", error);
       return null;
     }
   }

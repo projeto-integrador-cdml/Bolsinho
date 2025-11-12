@@ -1,7 +1,30 @@
-version: '3.8'
-
 services:
-  # Aplicação Bolsinho
+  # Banco de Dados MySQL
+  db:
+    image: mysql:8.0
+    container_name: bolsinho-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=bolsinho_root_password
+      - MYSQL_DATABASE=bolsinho
+      - MYSQL_USER=bolsinho
+      - MYSQL_PASSWORD=bolsinho_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - bolsinho-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pbolsinho_root_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # Aplicação Bolsinho (opcional - pode rodar localmente)
   app:
     build:
       context: .
@@ -11,10 +34,10 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=mysql://finbot:finbot_password@db:3306/finbot
+      - DATABASE_URL=mysql://bolsinho:bolsinho_password@db:3306/bolsinho
       - GROQ_API_KEY=${GROQ_API_KEY}
       - NEWS_API_KEY=${NEWS_API_KEY}
-      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
     depends_on:
       db:
         condition: service_healthy
@@ -24,29 +47,8 @@ services:
     networks:
       - bolsinho-network
     restart: unless-stopped
-
-  # Banco de Dados MySQL
-  db:
-    image: mysql:8.0
-    container_name: bolsinho-db
-    environment:
-      - MYSQL_ROOT_PASSWORD=root_password
-      - MYSQL_DATABASE=finbot
-      - MYSQL_USER=finbot
-      - MYSQL_PASSWORD=finbot_password
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - bolsinho-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+    profiles:
+      - full
 
   # Redis para cache (opcional)
   redis:
@@ -59,6 +61,8 @@ services:
     networks:
       - bolsinho-network
     restart: unless-stopped
+    profiles:
+      - full
 
   # Nginx como reverse proxy (opcional)
   nginx:
@@ -75,6 +79,8 @@ services:
     networks:
       - bolsinho-network
     restart: unless-stopped
+    profiles:
+      - full
 
 volumes:
   mysql_data:

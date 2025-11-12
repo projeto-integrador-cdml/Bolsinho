@@ -233,8 +233,38 @@ pnpm dev
 
 O aplicativo estará disponível em `http://localhost:3000`
 
+## 📚 Documentação
 
-## 🤝 Contribuindo
+Para mais informações sobre configuração, deploy e uso do sistema, consulte a [documentação completa](docs/README.md):
+
+### 🚀 Início Rápido
+- [Início Rápido](docs/setup/INICIO_RAPIDO.md) - Comece a usar o Bolsinho em minutos
+
+### 📋 Setup e Configuração
+- [Configuração do Ambiente](docs/setup/CONFIGURAR_ENV.md) - Configure variáveis de ambiente
+- [Setup do Banco de Dados](docs/setup/README_BACKEND.md) - Configure o banco de dados MySQL
+- [Setup do Docker MySQL](docs/setup/SETUP_DOCKER_MYSQL.md) - Configure MySQL usando Docker
+- [Setup do Cache de Ações](docs/setup/SETUP_CACHE_ACOES.md) - Configure o cache de ações
+
+### 📖 Guias
+- [Guia do Banco de Dados](docs/guides/GUIA_BANCO_DADOS.md) - Guia completo sobre o banco de dados
+- [Guia do Cache de Ações](docs/guides/GUIA_CACHE_ACOES.md) - Sistema de cache de ações
+- [Guia de Dados Reais de Ações](docs/guides/GUIA_DADOS_REAIS_ACOES.md) - Popular cache com dados reais
+
+### 🚢 Deploy
+- [Guia Geral de Deploy](docs/deployment/DEPLOY.md) - Visão geral e opções de deploy
+- [Deploy no Google Cloud](docs/deployment/DEPLOY_GOOGLE_CLOUD.md) - Deploy no GCP
+- [Deploy no Azure](docs/deployment/DEPLOY_AZURE.md) - Deploy no Azure
+- [Deploy no Render/Railway](docs/deployment/DEPLOY_RENDER_RAILWAY.md) - Deploy no Render/Railway
+
+### 🔧 Soluções de Problemas
+- [Solução: Erro do bcrypt](docs/solutions/SOLUCAO_BCRYPT.md) - Como resolver erros do bcrypt
+- [Solução: Erro do Banco de Dados](docs/solutions/SOLUCAO_ERRO_DATABASE.md) - Como resolver erros do banco
+
+### 📡 API
+- [Documentação da API](docs/API.md) - Documentação completa da API
+
+### 🤝 Contribuindo
 
 Contribuições são bem-vindas! O FinBot é um projeto open-source e sua ajuda é fundamental para torná-lo ainda melhor.
 

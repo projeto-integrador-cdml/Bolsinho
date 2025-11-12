@@ -43,74 +43,76 @@
 }
 
 :root {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-600);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+  /* Tema Verde Dinheiro Profissional */
+  --primary: 16 185 129; /* emerald-500 */
+  --primary-foreground: 255 255 255;
+  --sidebar-primary: 5 150 105; /* emerald-600 */
+  --sidebar-primary-foreground: 255 255 255;
+  --chart-1: 16 185 129; /* emerald-500 */
+  --chart-2: 5 150 105; /* emerald-600 */
+  --chart-3: 4 120 87; /* emerald-700 */
+  --chart-4: 6 95 70; /* emerald-800 */
+  --chart-5: 2 44 34; /* emerald-900 */
+  --radius: 0.75rem;
+  --background: 255 255 255;
+  --foreground: 17 24 39; /* gray-900 */
+  --card: 255 255 255;
+  --card-foreground: 17 24 39;
+  --popover: 255 255 255;
+  --popover-foreground: 17 24 39;
+  --secondary: 249 250 251; /* gray-50 */
+  --secondary-foreground: 55 65 81; /* gray-700 */
+  --muted: 249 250 251;
+  --muted-foreground: 107 114 128; /* gray-500 */
+  --accent: 236 253 245; /* emerald-50 */
+  --accent-foreground: 4 120 87; /* emerald-700 */
+  --destructive: 239 68 68; /* red-500 */
+  --destructive-foreground: 255 255 255;
+  --border: 229 231 235; /* gray-200 */
+  --input: 229 231 235;
+  --ring: 16 185 129; /* emerald-500 */
+  --sidebar: 255 255 255;
+  --sidebar-foreground: 17 24 39;
+  --sidebar-accent: 236 253 245;
+  --sidebar-accent-foreground: 4 120 87;
+  --sidebar-border: 229 231 235;
+  --sidebar-ring: 16 185 129;
 }
 
 .dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  /* Tema Escuro Verde Dinheiro */
+  --primary: 16 185 129;
+  --primary-foreground: 255 255 255;
+  --sidebar-primary: 16 185 129;
+  --sidebar-primary-foreground: 255 255 255;
+  --background: 17 24 39; /* gray-900 */
+  --foreground: 249 250 251; /* gray-50 */
+  --card: 31 41 55; /* gray-800 */
+  --card-foreground: 249 250 251;
+  --popover: 31 41 55;
+  --popover-foreground: 249 250 251;
+  --secondary: 55 65 81; /* gray-700 */
+  --secondary-foreground: 249 250 251;
+  --muted: 55 65 81;
+  --muted-foreground: 156 163 175; /* gray-400 */
+  --accent: 6 95 70; /* emerald-800 */
+  --accent-foreground: 16 185 129;
+  --destructive: 239 68 68;
+  --destructive-foreground: 255 255 255;
+  --border: 55 65 81;
+  --input: 55 65 81;
+  --ring: 16 185 129;
+  --chart-1: 16 185 129;
+  --chart-2: 5 150 105;
+  --chart-3: 4 120 87;
+  --chart-4: 6 95 70;
+  --chart-5: 2 44 34;
+  --sidebar: 31 41 55;
+  --sidebar-foreground: 249 250 251;
+  --sidebar-accent: 6 95 70;
+  --sidebar-accent-foreground: 16 185 129;
+  --sidebar-border: 55 65 81;
+  --sidebar-ring: 16 185 129;
 }
 
 @layer base {

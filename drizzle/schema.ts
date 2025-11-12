@@ -12,9 +12,10 @@ export const users = mysqlTable("users", {
    */
   id: int("id").autoincrement().primaryKey(),
   /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  openId: varchar("openId", { length: 64 }).unique(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
+  email: varchar("email", { length: 320 }).unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }), // Hash da senha (bcrypt)
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -148,3 +149,48 @@ export const documents = mysqlTable("documents", {
 
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = typeof documents.$inferInsert;
+
+// Portfólio de investimentos
+export const investments = mysqlTable("investments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  ticker: varchar("ticker", { length: 20 }).notNull(),
+  name: varchar("name", { length: 200 }),
+  quantity: int("quantity").notNull().default(0), // Quantidade de ações
+  averagePrice: int("averagePrice").notNull(), // Preço médio em centavos
+  totalInvested: int("totalInvested").notNull().default(0), // Total investido em centavos
+  currentValue: int("currentValue").default(0), // Valor atual em centavos
+  currency: varchar("currency", { length: 10 }).default("BRL"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Investment = typeof investments.$inferSelect;
+export type InsertInvestment = typeof investments.$inferInsert;
+
+// Cache de dados de ações
+export const stockCache = mysqlTable("stockCache", {
+  id: int("id").autoincrement().primaryKey(),
+  ticker: varchar("ticker", { length: 20 }).notNull().unique(),
+  normalizedTicker: varchar("normalizedTicker", { length: 50 }),
+  name: varchar("name", { length: 200 }),
+  currentPrice: int("currentPrice"), // Preço em centavos
+  previousClose: int("previousClose"), // Preço anterior em centavos
+  change: int("change"), // Variação em centavos
+  changePercent: int("changePercent"), // Variação percentual (ex: 250 = 2.50%)
+  dayHigh: int("dayHigh"), // Máxima do dia em centavos
+  dayLow: int("dayLow"), // Mínima do dia em centavos
+  volume: int("volume"), // Volume de negociação
+  currency: varchar("currency", { length: 10 }).default("BRL"),
+  market: varchar("market", { length: 50 }),
+  sector: varchar("sector", { length: 100 }),
+  industry: varchar("industry", { length: 200 }),
+  marketCap: varchar("marketCap", { length: 50 }), // Market cap como string para valores grandes
+  historyData: text("historyData"), // JSON com histórico de preços
+  lastUpdated: timestamp("lastUpdated").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type StockCache = typeof stockCache.$inferSelect;
+export type InsertStockCache = typeof stockCache.$inferInsert;

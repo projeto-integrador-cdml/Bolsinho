@@ -3,11 +3,12 @@ import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
-import { groqService, ocrService, newsService } from "./python-bridge";
+import { groqService, ocrService, newsService, stockService, calculatorService } from "./python-bridge";
 import { storagePut } from "./storage";
 import { invokeLLM, type Message } from "./_core/llm";
 import { ENV } from "./_core/env";
 import { processFileForPython } from "./_core/tempFiles";
+import * as db from "./db";
 
 /**
  * Detecta se a mensagem do usuário está pedindo notícias financeiras
@@ -94,6 +95,296 @@ function detectNewsRequest(message: string): { isNewsRequest: boolean; queryType
 }
 
 /**
+ * Detecta se a mensagem do usuário está pedindo informações sobre ações
+ */
+function detectStockRequest(message: string): { isStockRequest: boolean; ticker?: string; period?: string; action?: 'info' | 'variation' | 'history' } {
+  const lowerMessage = message.toLowerCase();
+  
+  // Palavras-chave para detectar solicitações de ações
+  const stockKeywords = [
+    'ação', 'acoes', 'ações', 'stock', 'stocks',
+    'petrobras', 'vale', 'itau', 'bradesco', 'ambev', 'weg',
+    'petr4', 'vale3', 'itub4', 'bbdc4', 'abev3', 'wege3',
+    'variação', 'variacao', 'variação da', 'variacao da',
+    'como está', 'como esta', 'como ta', 'preço', 'preco',
+    'cotação', 'cotacao', 'valor da ação', 'valor da acao',
+    'histórico', 'historico', 'gráfico', 'grafico',
+    'performance', 'rentabilidade', 'retorno'
+  ];
+  
+  // Verifica se é uma solicitação de ações
+  const isStockRequest = stockKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  if (!isStockRequest) {
+    return { isStockRequest: false };
+  }
+  
+  // Tenta extrair o ticker da mensagem
+  // Padrões: "PETR4", "PETR4.SA", "ação PETR4", "PETR4 variação"
+  // Regex para encontrar tickers brasileiros (4 letras + 1-2 dígitos) ou com .SA
+  const tickerRegex = /\b([A-Z]{4}\d{1,2}(?:\.SA)?)\b/gi;
+  const matches = message.match(tickerRegex);
+  
+  let ticker: string | undefined;
+  if (matches && matches.length > 0) {
+    // Pega o primeiro match e garante que está em maiúsculas
+    ticker = matches[0].toUpperCase();
+  }
+  
+  // Se não encontrou por regex, tenta padrões mais flexíveis
+  if (!ticker) {
+    const flexiblePatterns = [
+      /(?:ação|acao|stock|da|de|a)\s+([A-Z]{4}\d{1,2})/gi,
+      /([A-Z]{4}\d{1,2})\s+(?:variação|variacao|preço|preco|cotação|cotacao|esta|está)/gi,
+    ];
+    
+    for (const pattern of flexiblePatterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        ticker = match[1].toUpperCase();
+        break;
+      }
+    }
+  }
+  
+  // Se não encontrou ticker, tenta buscar por nomes de empresas conhecidas
+  if (!ticker) {
+    const companyMap: Record<string, string> = {
+      'petrobras': 'PETR4',
+      'vale': 'VALE3',
+      'itau': 'ITUB4',
+      'itaú': 'ITUB4',
+      'bradesco': 'BBDC4',
+      'ambev': 'ABEV3',
+      'weg': 'WEGE3',
+      'localiza': 'RENT3',
+      'suzano': 'SUZB3',
+      'raia': 'RADL3',
+      'eletrobras': 'ELET3',
+      'banco do brasil': 'BBAS3',
+      'santander': 'SANB11',
+      'embraer': 'EMBR3',
+    };
+    
+    for (const [company, tick] of Object.entries(companyMap)) {
+      if (lowerMessage.includes(company)) {
+        ticker = tick;
+        break;
+      }
+    }
+  }
+  
+  // Detecta período solicitado
+  let period = '1mo'; // padrão: 1 mês
+  if (lowerMessage.includes('hoje') || lowerMessage.includes('dia')) {
+    period = '1d';
+  } else if (lowerMessage.includes('semana')) {
+    period = '5d';
+  } else if (lowerMessage.includes('mês') || lowerMessage.includes('mes') || lowerMessage.includes('mês')) {
+    period = '1mo';
+  } else if (lowerMessage.includes('trimestre') || lowerMessage.includes('3 meses')) {
+    period = '3mo';
+  } else if (lowerMessage.includes('semestre') || lowerMessage.includes('6 meses')) {
+    period = '6mo';
+  } else if (lowerMessage.includes('ano') || lowerMessage.includes('1 ano')) {
+    period = '1y';
+  }
+  
+  // Detecta tipo de ação
+  let action: 'info' | 'variation' | 'history' = 'info';
+  if (lowerMessage.includes('variação') || lowerMessage.includes('variacao') || lowerMessage.includes('variou')) {
+    action = 'variation';
+  } else if (lowerMessage.includes('histórico') || lowerMessage.includes('historico') || lowerMessage.includes('gráfico') || lowerMessage.includes('grafico')) {
+    action = 'history';
+  }
+  
+  return {
+    isStockRequest: true,
+    ticker,
+    period,
+    action
+  };
+}
+
+/**
+ * Detecta se a mensagem do usuário está pedindo cálculos financeiros
+ */
+function detectCalculationRequest(message: string): { isCalculationRequest: boolean; calculationType?: 'distribution' | 'percentage' | 'compound_interest' | 'general'; details?: any } {
+  const lowerMessage = message.toLowerCase();
+  
+  // Palavras-chave para detectar solicitações de cálculos
+  const calculationKeywords = [
+    'calcular', 'calcule', 'somar', 'soma', 'total',
+    'distribuir', 'dividir', 'alocar', 'investir',
+    'percentual', 'porcentagem', '%', 'porcento',
+    'juros', 'rendimento', 'juros compostos',
+    'quanto', 'quanto é', 'quanto dá'
+  ];
+  
+  // Verifica se é uma solicitação de cálculo
+  const isCalculationRequest = calculationKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  if (!isCalculationRequest) {
+    return { isCalculationRequest: false };
+  }
+  
+  // Detecta tipo de cálculo
+  let calculationType: 'distribution' | 'percentage' | 'compound_interest' | 'general' = 'general';
+  
+  if (lowerMessage.includes('distribuir') || lowerMessage.includes('dividir') || lowerMessage.includes('alocar') || 
+      lowerMessage.includes('investir') && (lowerMessage.includes('total') || lowerMessage.includes('mil') || /\d+/.test(message))) {
+    calculationType = 'distribution';
+  } else if (lowerMessage.includes('percentual') || lowerMessage.includes('porcentagem') || lowerMessage.includes('%') || 
+             lowerMessage.includes('porcento')) {
+    calculationType = 'percentage';
+  } else if (lowerMessage.includes('juros') || lowerMessage.includes('rendimento') || lowerMessage.includes('compostos')) {
+    calculationType = 'compound_interest';
+  }
+  
+  return {
+    isCalculationRequest: true,
+    calculationType
+  };
+}
+
+/**
+ * Processa cálculos financeiros baseado na solicitação detectada
+ */
+async function processFinancialCalculations(message: string): Promise<string | null> {
+  try {
+    // Primeiro, tenta analisar a pergunta para extrair informações
+    const parsed = await calculatorService.parseFinancialQuestion(message);
+    
+    if (!parsed.total_amount && parsed.calculation_type !== 'percentage') {
+      return null; // Sem informações suficientes para calcular
+    }
+    
+    // Se for distribuição de investimentos
+    if (parsed.calculation_type === 'distribution' && parsed.total_amount) {
+      let result;
+      
+      if (parsed.percentages && parsed.percentages.length > 0) {
+        // Distribuição por percentuais
+        result = await calculatorService.calculateInvestmentDistribution(
+          parsed.total_amount,
+          parsed.percentages,
+          undefined,
+          parsed.targets
+        );
+      } else if (parsed.amounts && parsed.amounts.length > 0) {
+        // Distribuição por valores específicos
+        result = await calculatorService.calculateInvestmentDistribution(
+          parsed.total_amount,
+          undefined,
+          parsed.amounts,
+          parsed.targets
+        );
+      } else {
+        // Se não tem percentuais nem valores, não pode calcular
+        return null;
+      }
+      
+      if (result.success) {
+        // Formata o resultado para incluir no contexto
+        let output = `\n\n--- CÁLCULO DE DISTRIBUIÇÃO DE INVESTIMENTOS (CALCULADO PRECISAMENTE) ---\n`;
+        output += `Total disponível: ${result.formatted_total}\n\n`;
+        output += `Distribuição:\n`;
+        result.distribution.forEach((item: any, index: number) => {
+          output += `${index + 1}. ${item.target}: ${item.formatted_amount} (${item.percentage}%)\n`;
+        });
+        output += `\n${result.summary}\n`;
+        if (result.is_correct) {
+          output += `✅ Soma verificada: Os valores somam exatamente o total!\n`;
+        } else {
+          output += `⚠️ Diferença de arredondamento: ${Math.abs(result.difference).toFixed(2)}\n`;
+        }
+        output += `--- FIM DO CÁLCULO ---\n`;
+        return output;
+      }
+    }
+    
+    // Se for cálculo de percentual
+    if (parsed.calculation_type === 'percentage' && parsed.amounts && parsed.amounts.length >= 2) {
+      const value = parsed.amounts[0];
+      const total = parsed.total_amount || parsed.amounts[1] || parsed.amounts.reduce((a: number, b: number) => a + b, 0);
+      const result = await calculatorService.calculatePercentage(value, total);
+      
+      if (result.success) {
+        return `\n\n--- CÁLCULO DE PERCENTUAL (CALCULADO PRECISAMENTE) ---\n` +
+               `Valor: R$ ${result.value.toFixed(2)}\n` +
+               `Total: R$ ${result.total.toFixed(2)}\n` +
+               `Percentual: ${result.formatted}\n` +
+               `--- FIM DO CÁLCULO ---\n`;
+      }
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('[Chat] Erro ao processar cálculos financeiros:', error);
+    return null; // Retorna null em caso de erro para não interromper o fluxo
+  }
+}
+
+/**
+ * Busca dados de ações baseado na solicitação detectada
+ */
+async function fetchStockData(detection: { ticker?: string; period?: string; action?: string }): Promise<string | null> {
+  try {
+    if (!detection.ticker) {
+      return null; // Sem ticker, não pode buscar
+    }
+    
+    const ticker = detection.ticker;
+    const period = detection.period || '1mo';
+    
+    if (detection.action === 'variation') {
+      // Busca apenas variação
+      const variation = await stockService.getStockVariation(ticker, period);
+      if (variation.success) {
+        return `Dados da ação ${variation.name} (${variation.ticker}):\n` +
+               `- Período: ${period}\n` +
+               `- Preço inicial: ${variation.currency} ${variation.start_price}\n` +
+               `- Preço final: ${variation.currency} ${variation.end_price}\n` +
+               `- Variação: ${variation.change >= 0 ? '+' : ''}${variation.change} (${variation.change_percent >= 0 ? '+' : ''}${variation.change_percent}%)\n`;
+      }
+    } else if (detection.action === 'history') {
+      // Busca histórico completo
+      const history = await stockService.getStockHistory(ticker, period, '1d');
+      if (history.success) {
+        return `Histórico da ação ${ticker} (${period}):\n` +
+               `- Período: ${history.first_date} a ${history.last_date}\n` +
+               `- Preço inicial: ${history.first_close}\n` +
+               `- Preço final: ${history.last_close}\n` +
+               `- Variação: ${history.period_change >= 0 ? '+' : ''}${history.period_change} (${history.period_change_percent >= 0 ? '+' : ''}${history.period_change_percent}%)\n` +
+               `- Máxima: ${history.high_price}\n` +
+               `- Mínima: ${history.low_price}\n` +
+               `- Média: ${history.avg_price}\n` +
+               `- Pontos de dados: ${history.data_points}\n`;
+      }
+    } else {
+      // Busca informações gerais
+      const info = await stockService.getStockInfo(ticker);
+      if (info.success) {
+        return `Informações da ação ${info.name} (${info.ticker}):\n` +
+               `- Preço atual: ${info.currency} ${info.current_price}\n` +
+               `- Variação do dia: ${info.change >= 0 ? '+' : ''}${info.change} (${info.change_percent >= 0 ? '+' : ''}${info.change_percent}%)\n` +
+               `- Máxima do dia: ${info.day_high}\n` +
+               `- Mínima do dia: ${info.day_low}\n` +
+               `- Volume: ${info.volume?.toLocaleString() || 'N/A'}\n` +
+               (info.sector ? `- Setor: ${info.sector}\n` : '') +
+               (info.industry ? `- Indústria: ${info.industry}\n` : '') +
+               `- Mercado: ${info.market}\n`;
+      }
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('[Chat] Erro ao buscar dados de ações:', error);
+    return null; // Retorna null em caso de erro para não interromper o fluxo
+  }
+}
+
+/**
  * Busca notícias baseado no tipo de solicitação detectado
  */
 async function fetchRelevantNews(detection: { queryType: string; query?: string; category?: string; sector?: string }): Promise<string | null> {
@@ -163,8 +454,322 @@ ${article.description ? `   ${article.description.substring(0, 200)}...` : ''}
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
+  
+  // Stock API endpoints for frontend
+  stocks: router({
+    info: publicProcedure
+      .input(z.object({ ticker: z.string() }))
+      .query(async ({ input }) => {
+        const ticker = input.ticker.toUpperCase();
+        
+        // Tenta buscar do cache primeiro
+        const cached = await db.getStockFromCache(ticker);
+        const isStale = await db.isStockCacheStale(ticker, 15); // 15 minutos
+        
+        // Se tem cache válido (não está antigo), retorna do cache
+        if (cached && !isStale) {
+          console.log(`[Stocks] Retornando ${ticker} do cache`);
+          return {
+            success: true,
+            ticker: cached.ticker,
+            normalized_ticker: cached.normalizedTicker || cached.ticker,
+            symbol: cached.ticker,
+            name: cached.name || cached.ticker,
+            current_price: cached.currentPrice ? cached.currentPrice / 100 : null,
+            previous_close: cached.previousClose ? cached.previousClose / 100 : null,
+            change: cached.change ? cached.change / 100 : 0,
+            change_percent: cached.changePercent ? cached.changePercent / 100 : 0,
+            day_high: cached.dayHigh ? cached.dayHigh / 100 : null,
+            day_low: cached.dayLow ? cached.dayLow / 100 : null,
+            volume: cached.volume || null,
+            currency: cached.currency || "BRL",
+            market: cached.market || "B3",
+            sector: cached.sector || null,
+            industry: cached.industry || null,
+            market_cap: cached.marketCap || null,
+            timestamp: cached.lastUpdated?.toISOString() || new Date().toISOString(),
+          };
+        }
+        
+        // Se não tem cache ou está antigo, busca da API
+        console.log(`[Stocks] Buscando ${ticker} da API (cache ${cached ? 'antigo' : 'não existe'})`);
+        const result = await stockService.getStockInfo(ticker);
+        
+        // Se conseguiu buscar da API, salva no cache
+        if (result && result.success) {
+          try {
+            await db.upsertStockCache({
+              ticker: result.ticker,
+              normalizedTicker: result.normalized_ticker,
+              name: result.name,
+              currentPrice: result.current_price,
+              previousClose: result.previous_close,
+              change: result.change,
+              changePercent: result.change_percent,
+              dayHigh: result.day_high,
+              dayLow: result.day_low,
+              volume: result.volume,
+              currency: result.currency,
+              market: result.market,
+              sector: result.sector,
+              industry: result.industry,
+              marketCap: result.market_cap,
+            });
+          } catch (error) {
+            console.error(`[Stocks] Erro ao salvar ${ticker} no cache:`, error);
+          }
+        } else if (cached) {
+          // Se a API falhou mas tem cache (mesmo que antigo), retorna o cache
+          console.log(`[Stocks] API falhou para ${ticker}, usando cache antigo`);
+          return {
+            success: true,
+            ticker: cached.ticker,
+            normalized_ticker: cached.normalizedTicker || cached.ticker,
+            symbol: cached.ticker,
+            name: cached.name || cached.ticker,
+            current_price: cached.currentPrice ? cached.currentPrice / 100 : null,
+            previous_close: cached.previousClose ? cached.previousClose / 100 : null,
+            change: cached.change ? cached.change / 100 : 0,
+            change_percent: cached.changePercent ? cached.changePercent / 100 : 0,
+            day_high: cached.dayHigh ? cached.dayHigh / 100 : null,
+            day_low: cached.dayLow ? cached.dayLow / 100 : null,
+            volume: cached.volume || null,
+            currency: cached.currency || "BRL",
+            market: cached.market || "B3",
+            sector: cached.sector || null,
+            industry: cached.industry || null,
+            market_cap: cached.marketCap || null,
+            timestamp: cached.lastUpdated?.toISOString() || new Date().toISOString(),
+          };
+        }
+        
+        return result;
+      }),
+    
+    history: publicProcedure
+      .input(z.object({
+        ticker: z.string(),
+        period: z.string().optional().default("1mo"),
+        interval: z.string().optional().default("1d"),
+      }))
+      .query(async ({ input }) => {
+        const ticker = input.ticker.toUpperCase();
+        
+        // Tenta buscar do cache primeiro
+        const cached = await db.getStockFromCache(ticker);
+        
+        // Se tem cache com histórico, retorna
+        if (cached && cached.historyData) {
+          try {
+            const history = JSON.parse(cached.historyData);
+            const isStale = await db.isStockCacheStale(ticker, 15);
+            
+            if (!isStale) {
+              console.log(`[Stocks] Retornando histórico de ${ticker} do cache`);
+              return history;
+            }
+          } catch (error) {
+            console.error(`[Stocks] Erro ao parsear histórico do cache para ${ticker}:`, error);
+          }
+        }
+        
+        // Busca da API
+        console.log(`[Stocks] Buscando histórico de ${ticker} da API`);
+        const result = await stockService.getStockHistory(input.ticker, input.period, input.interval);
+        
+        // Se conseguiu buscar da API, salva no cache
+        if (result && result.success) {
+          try {
+            // Atualiza também os dados básicos se não tiver cache
+            const existingCache = await db.getStockFromCache(ticker);
+            if (!existingCache || !existingCache.name) {
+              // Busca info básica também para ter dados completos
+              const info = await stockService.getStockInfo(ticker);
+              if (info && info.success) {
+                await db.upsertStockCache({
+                  ticker: info.ticker,
+                  normalizedTicker: info.normalized_ticker,
+                  name: info.name,
+                  currentPrice: info.current_price,
+                  previousClose: info.previous_close,
+                  change: info.change,
+                  changePercent: info.change_percent,
+                  dayHigh: info.day_high,
+                  dayLow: info.day_low,
+                  volume: info.volume,
+                  currency: info.currency,
+                  market: info.market,
+                  sector: info.sector,
+                  industry: info.industry,
+                  marketCap: info.market_cap,
+                  historyData: JSON.stringify(result),
+                });
+              }
+            } else {
+              // Só atualiza o histórico
+              await db.upsertStockCache({
+                ticker: result.ticker,
+                normalizedTicker: result.normalized_ticker,
+                historyData: JSON.stringify(result),
+              });
+            }
+          } catch (error) {
+            console.error(`[Stocks] Erro ao salvar histórico de ${ticker} no cache:`, error);
+          }
+        } else if (cached && cached.historyData) {
+          // Se a API falhou mas tem cache, retorna o cache
+          try {
+            const history = JSON.parse(cached.historyData);
+            console.log(`[Stocks] API falhou para histórico de ${ticker}, usando cache`);
+            return history;
+          } catch (error) {
+            console.error(`[Stocks] Erro ao parsear histórico do cache para ${ticker}:`, error);
+          }
+        }
+        
+        return result;
+      }),
+    
+    variation: publicProcedure
+      .input(z.object({
+        ticker: z.string(),
+        period: z.string().optional().default("1mo"),
+      }))
+      .query(async ({ input }) => {
+        try {
+          const result = await stockService.getStockVariation(input.ticker, input.period);
+          return result;
+        } catch (error) {
+          console.error("[Stocks] Erro ao calcular variação:", error);
+          throw new Error(error instanceof Error ? error.message : "Erro ao calcular variação da ação");
+        }
+      }),
+    
+    search: publicProcedure
+      .input(z.object({
+        query: z.string(),
+        limit: z.number().optional().default(5),
+      }))
+      .query(async ({ input }) => {
+        try {
+          const result = await stockService.searchStocks(input.query, input.limit);
+          return result;
+        } catch (error) {
+          console.error("[Stocks] Erro ao buscar ações:", error);
+          throw new Error(error instanceof Error ? error.message : "Erro ao buscar ações");
+        }
+      }),
+    
+    // Endpoint para atualizar cache (pode ser chamado por cron job)
+    updateCache: publicProcedure
+      .input(z.object({ ticker: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const tickers = input.ticker 
+          ? [input.ticker.toUpperCase()]
+          : ["PETR4", "VALE3", "ITUB4", "BBDC4", "ABEV3", "WEGE3"];
+        
+        const results = [];
+        
+        for (const ticker of tickers) {
+          try {
+            console.log(`[Stocks] Atualizando cache para ${ticker}`);
+            const info = await stockService.getStockInfo(ticker);
+            const history = await stockService.getStockHistory(ticker, "1mo", "1d");
+            
+            if (info && info.success) {
+              await db.upsertStockCache({
+                ticker: info.ticker,
+                normalizedTicker: info.normalized_ticker,
+                name: info.name,
+                currentPrice: info.current_price,
+                previousClose: info.previous_close,
+                change: info.change,
+                changePercent: info.change_percent,
+                dayHigh: info.day_high,
+                dayLow: info.day_low,
+                volume: info.volume,
+                currency: info.currency,
+                market: info.market,
+                sector: info.sector,
+                industry: info.industry,
+                marketCap: info.market_cap,
+                historyData: history && history.success ? JSON.stringify(history) : null,
+              });
+              results.push({ ticker, success: true });
+            } else {
+              results.push({ ticker, success: false, error: info?.error });
+            }
+            
+            // Delay entre requisições para evitar rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error) {
+            console.error(`[Stocks] Erro ao atualizar cache para ${ticker}:`, error);
+            results.push({ ticker, success: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+          }
+        }
+        
+        return { results };
+      }),
+  }),
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => {
+      return {
+        user: opts.ctx.user,
+        isAuthenticated: opts.ctx.user !== null,
+      };
+    }),
+    
+    register: publicProcedure
+      .input(z.object({
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+        name: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const { registerUser, createUserSession } = await import("./_core/auth");
+          const user = await registerUser(input.email, input.password, input.name);
+          await createUserSession(user, ctx.req, ctx.res);
+          
+          return {
+            success: true,
+            user: {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+            },
+          };
+        } catch (error) {
+          console.error("[Auth] Register error:", error);
+          throw new Error(error instanceof Error ? error.message : "Erro ao registrar usuário");
+        }
+      }),
+    
+    login: publicProcedure
+      .input(z.object({
+        email: z.string().email("Email inválido"),
+        password: z.string().min(1, "Senha é obrigatória"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const { loginUser, createUserSession } = await import("./_core/auth");
+          const user = await loginUser(input.email, input.password);
+          await createUserSession(user, ctx.req, ctx.res);
+          
+          return {
+            success: true,
+            user: {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+            },
+          };
+        } catch (error) {
+          console.error("[Auth] Login error:", error);
+          throw new Error(error instanceof Error ? error.message : "Email ou senha incorretos");
+        }
+      }),
+    
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -174,6 +779,135 @@ export const appRouter = router({
     }),
   }),
 
+  // Dashboard endpoints
+  dashboard: router({
+    stats: publicProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) {
+        return {
+          portfolioTotal: 0,
+          monthlyReturn: 0,
+          monitoredStocks: 6,
+          investmentsCount: 0,
+        };
+      }
+      
+      try {
+        const stats = await db.getDashboardStats(ctx.user.id);
+        return stats;
+      } catch (error) {
+        console.error("[Dashboard] Error getting stats:", error);
+        return {
+          portfolioTotal: 0,
+          monthlyReturn: 0,
+          monitoredStocks: 6,
+          investmentsCount: 0,
+        };
+      }
+    }),
+  }),
+  
+  // Investments endpoints
+  investments: router({
+    list: publicProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) {
+        throw new Error("Usuário não autenticado");
+      }
+      
+      try {
+        const investments = await db.getUserInvestments(ctx.user.id);
+        return investments;
+      } catch (error) {
+        console.error("[Investments] Error listing:", error);
+        throw new Error("Erro ao buscar investimentos");
+      }
+    }),
+    
+    create: publicProcedure
+      .input(z.object({
+        ticker: z.string().min(1),
+        name: z.string().optional(),
+        quantity: z.number().min(0),
+        averagePrice: z.number().min(0),
+        totalInvested: z.number().min(0),
+        currency: z.string().default("BRL"),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (!ctx.user) {
+          throw new Error("Usuário não autenticado");
+        }
+        
+        try {
+          // Convert prices to cents (assuming input is in reais/dollars)
+          const averagePriceInCents = Math.round(input.averagePrice * 100);
+          const totalInvestedInCents = Math.round(input.totalInvested * 100);
+          
+          await db.createInvestment({
+            userId: ctx.user.id,
+            ticker: input.ticker.toUpperCase(),
+            name: input.name || null,
+            quantity: input.quantity,
+            averagePrice: averagePriceInCents,
+            totalInvested: totalInvestedInCents,
+            currentValue: totalInvestedInCents, // Initial value equals invested
+            currency: input.currency,
+            notes: input.notes || null,
+          });
+          
+          return { success: true };
+        } catch (error) {
+          console.error("[Investments] Error creating:", error);
+          throw new Error("Erro ao criar investimento");
+        }
+      }),
+    
+    update: publicProcedure
+      .input(z.object({
+        id: z.number(),
+        quantity: z.number().min(0).optional(),
+        averagePrice: z.number().min(0).optional(),
+        totalInvested: z.number().min(0).optional(),
+        currentValue: z.number().min(0).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (!ctx.user) {
+          throw new Error("Usuário não autenticado");
+        }
+        
+        try {
+          const updates: any = {};
+          if (input.quantity !== undefined) updates.quantity = input.quantity;
+          if (input.averagePrice !== undefined) updates.averagePrice = Math.round(input.averagePrice * 100);
+          if (input.totalInvested !== undefined) updates.totalInvested = Math.round(input.totalInvested * 100);
+          if (input.currentValue !== undefined) updates.currentValue = Math.round(input.currentValue * 100);
+          if (input.notes !== undefined) updates.notes = input.notes;
+          
+          await db.updateInvestment(input.id, ctx.user.id, updates);
+          return { success: true };
+        } catch (error) {
+          console.error("[Investments] Error updating:", error);
+          throw new Error("Erro ao atualizar investimento");
+        }
+      }),
+    
+    delete: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!ctx.user) {
+          throw new Error("Usuário não autenticado");
+        }
+        
+        try {
+          await db.deleteInvestment(input.id, ctx.user.id);
+          return { success: true };
+        } catch (error) {
+          console.error("[Investments] Error deleting:", error);
+          throw new Error("Erro ao deletar investimento");
+        }
+      }),
+  }),
+  
   // Upload de arquivos (imagens e áudio)
   upload: router({
     file: publicProcedure
@@ -392,13 +1126,49 @@ export const appRouter = router({
             }
           }
           
-          // Combine original message with extracted PDF texts and news context
+          // Detect if user is asking for stock information
+          const stockDetection = detectStockRequest(userMessage);
+          let stockContext = "";
+          
+          if (stockDetection.isStockRequest) {
+            console.log(`[Chat] Solicitação de ações detectada: ticker=${stockDetection.ticker || 'N/A'}, period=${stockDetection.period || 'N/A'}, action=${stockDetection.action || 'N/A'}`);
+            const fetchedStock = await fetchStockData(stockDetection);
+            if (fetchedStock) {
+              stockContext = fetchedStock;
+              console.log(`[Chat] Dados de ações encontrados e adicionados ao contexto`);
+            } else {
+              console.log(`[Chat] Nenhum dado de ações disponível ou erro ao buscar`);
+            }
+          }
+          
+          // Detect if user is asking for financial calculations
+          const calculationDetection = detectCalculationRequest(userMessage);
+          let calculationContext = "";
+          
+          if (calculationDetection.isCalculationRequest) {
+            console.log(`[Chat] Solicitação de cálculo detectada: type=${calculationDetection.calculationType || 'N/A'}`);
+            const calculated = await processFinancialCalculations(userMessage);
+            if (calculated) {
+              calculationContext = calculated;
+              console.log(`[Chat] Cálculos realizados e adicionados ao contexto`);
+            } else {
+              console.log(`[Chat] Não foi possível processar cálculos ou informações insuficientes`);
+            }
+          }
+          
+          // Combine original message with extracted PDF texts, news context, stock context, and calculation context
           let combinedText = userMessage;
           if (pdfTexts.length > 0) {
             combinedText += pdfTexts.join("\n");
           }
           if (newsContext) {
             combinedText = newsContext + "\n\n" + combinedText;
+          }
+          if (stockContext) {
+            combinedText = stockContext + "\n\n" + combinedText;
+          }
+          if (calculationContext) {
+            combinedText = calculationContext + "\n\n" + combinedText;
           }
           
           // Add text if provided (now including PDF content)
@@ -555,7 +1325,7 @@ export const appRouter = router({
           const messages: Message[] = [
             {
               role: "system",
-              content: "Você é o Bolsinho, assistente financeiro pessoal e especialista em investimentos e finanças. Você é especializado em educação financeira, planejamento de orçamento, análise de gastos, investimentos e mercado financeiro, e economia. Seja sempre prestativo, claro e forneça conselhos práticos. Use linguagem acessível e exemplos quando apropriado. Quando falar sobre investimentos, sempre mencione os riscos envolvidos.",
+              content: "Você é o Bolsinho, assistente financeiro pessoal e especialista em investimentos e finanças. Você é especializado em: análise de ações e mercado de capitais (B3, NYSE, NASDAQ), monitoramento de cotações e variações de ações, análise de performance e histórico de ações, educação financeira, planejamento de orçamento, análise de gastos, investimentos e mercado financeiro, e economia. Seja sempre prestativo, claro e forneça conselhos práticos. Use linguagem acessível e exemplos quando apropriado. Quando falar sobre investimentos ou ações, sempre mencione os riscos envolvidos. Você pode analisar dados de ações fornecidos no contexto e explicar variações, tendências e performance. IMPORTANTE: Se houver CÁLCULOS PRECISOS no contexto da mensagem (marcados com 'CALCULADO PRECISAMENTE'), SEMPRE use esses valores calculados. NUNCA invente números ou faça cálculos você mesmo. Apresente os resultados EXATAMENTE como estão calculados no contexto.",
             },
           ];
           
