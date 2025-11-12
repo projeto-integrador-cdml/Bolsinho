@@ -1,5 +1,5 @@
-# Script PowerShell simplificado para alterar o autor de todos os commits
-# Versao sem emojis para compatibilidade com PowerShell do Windows
+# Script PowerShell direto para alterar o autor de todos os commits
+# Versao simplificada que funciona melhor no Windows
 
 param(
     [string]$NewName = "Filipe Sampaio Campos",
@@ -50,7 +50,7 @@ git config user.email "$NewEmail"
 Write-Host "   [OK] Configuracao atualizada" -ForegroundColor Green
 Write-Host ""
 
-# Passo 3: Reescrever historico
+# Passo 3: Reescrever historico usando Git Bash
 Write-Host "[PASSO 3] Reescrevendo historico do Git..." -ForegroundColor Green
 Write-Host "   Isso pode levar alguns minutos..." -ForegroundColor Yellow
 Write-Host ""
@@ -66,17 +66,19 @@ if ($gitPath) {
         
         # Criar script bash temporario
         $scriptPath = Join-Path $env:TEMP "git-filter-$timestamp.sh"
-        $scriptContent = "#!/bin/bash`n" +
-                        "git filter-branch -f --env-filter '`n" +
-                        "export GIT_AUTHOR_NAME=`"$NewName`"`n" +
-                        "export GIT_AUTHOR_EMAIL=`"$NewEmail`"`n" +
-                        "export GIT_COMMITTER_NAME=`"$NewName`"`n" +
-                        "export GIT_COMMITTER_EMAIL=`"$NewEmail`"`n" +
-                        "' --tag-name-filter cat -- --branches --tags`n"
+        $scriptContent = @"
+#!/bin/bash
+git filter-branch -f --env-filter '
+export GIT_AUTHOR_NAME="$NewName"
+export GIT_AUTHOR_EMAIL="$NewEmail"
+export GIT_COMMITTER_NAME="$NewName"
+export GIT_COMMITTER_EMAIL="$NewEmail"
+' --tag-name-filter cat -- --branches --tags
+"@
         
         # Salvar script com encoding UTF8 sem BOM
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
+        [System.IO.File]::WriteAllLines($scriptPath, $scriptContent, $utf8NoBom)
         
         # Executar com Git Bash
         & $bashPath $scriptPath
@@ -92,7 +94,7 @@ if ($gitPath) {
             exit 1
         }
     } else {
-        Write-Host "   [ERRO] Git Bash nao encontrado" -ForegroundColor Red
+        Write-Host "   [ERRO] Git Bash nao encontrado em: $bashPath" -ForegroundColor Red
         Write-Host ""
         Write-Host "   Execute manualmente no Git Bash:" -ForegroundColor Yellow
         Write-Host "   git filter-branch -f --env-filter 'export GIT_AUTHOR_NAME=`"$NewName`"; export GIT_AUTHOR_EMAIL=`"$NewEmail`"; export GIT_COMMITTER_NAME=`"$NewName`"; export GIT_COMMITTER_EMAIL=`"$NewEmail`"' --tag-name-filter cat -- --branches --tags" -ForegroundColor Cyan
