@@ -1,1 +1,0 @@
-ALTER TABLE `investments` ADD `type` enum('stock','fii','cdb','tesouro_direto','fundo_imobiliario','outro') DEFAULT 'stock' NOT NULL;
